@@ -1,0 +1,99 @@
+schema_version: 1
+
+run:
+  id: cldefocus_pdraw_family_smoke_v2_2d
+  purpose: 同一复合镜头 family 的 2 profile × 5 aperture 离线 PDraw bank 冒烟验证
+
+source:
+  repository: https://github.com/lykelee/CLDefocus.git
+  checkout: /mnt/data/lsj/model/pytorchlightning/render/CLDefocus
+  commit: 2b61c570cf87a195aacbf357449234f9f56b412b
+  license: MIT
+
+lens:
+  root: /mnt/data/lsj/data/optics/cldefocus/lens-mytable-original
+  relative_path: prime/JP2018-205527_Example01P.mytable
+  sha256: 44ecff38064ae75429406eb466343ac2eeeec61a078bbde5dd67ad691dc7303a
+
+sensor:
+  width_px: 2560
+  height_px: 2560
+  pixel_pitch_m: 1.0e-5
+
+apertures:
+  f_numbers: [1.8, 2.0, 2.8, 4.0, 5.6]
+
+optics:
+  wavelength_m: 5.875618e-7
+  object_depth_m: 1000.0
+  field_x_normalized: [-0.5, 0.5]
+  field_y_normalized: [-0.5, 0.5]
+  target_signed_coc_bins_px: [-1.0, 0.0, 1.0]
+  sensor_offset_envelope_m: 0.0004
+  target_coc_tolerance_px: 1.0e-6
+  kernel_size: 33
+  upsample: 1
+
+family:
+  family_id: cldefocus_jp2018_same_family_randomized_v1
+  asset_id: cldefocus_jp2018_family_2p5a_smoke_v1
+  batch_sensor_chunk_size: 32
+  centroid_support_padding_px: 2
+  aperture_centroid_scale_by_f_number:
+    "1.8": 1.00
+    "2.0": 0.98
+    "2.8": 0.94
+    "4.0": 0.90
+    "5.6": 0.86
+  randomization:
+    master_seed: 20260812
+    profile_count: 2
+    profile_id_prefix: F
+    ranges:
+      transition_width: [0.38, 0.48]
+      cross_talk: [0.01, 0.03]
+      split_bias_norm: [-0.015, 0.015]
+      boundary_curvature_norm: [-0.01, 0.01]
+      microlens_edge_rolloff: [0.0, 0.08]
+      field_split_slope: [-0.015, 0.015]
+      field_acceptance_slope: [-0.05, 0.05]
+      lr_throughput_delta: [-0.02, 0.02]
+      field_lr_throughput_slope: [-0.01, 0.01]
+      aperture_lr_throughput_slope: [-0.01, 0.01]
+      astigmatism_0_waves: [-0.03, 0.03]
+      astigmatism_45_waves: [-0.03, 0.03]
+      coma_x_waves: [-0.03, 0.03]
+      coma_y_waves: [-0.03, 0.03]
+      spherical_waves: [-0.02, 0.02]
+      field_astigmatism_0_waves_per_norm: [-0.03, 0.03]
+      field_astigmatism_45_waves_per_norm: [-0.03, 0.03]
+      field_coma_x_waves_per_norm: [-0.03, 0.03]
+      field_coma_y_waves_per_norm: [-0.03, 0.03]
+      centroid_slope_px_per_coc: [0.14, 0.18]
+
+pdoffset:
+  sample_range_px: [-0.20, 0.20]
+  smoke_probe_px: 0.125
+
+gates:
+  energy_abs_max: 2.0e-6
+  raw_support_border_width_px: 2
+  raw_support_inner_mass_min: 0.99
+  retarget_retained_mass_min: 0.999999
+  centroid_target_error_abs_max_px: 2.0e-5
+  zero_centroid_abs_max_px: 2.0e-5
+  pdoffset_probe_error_abs_max_px: 2.0e-5
+  adjacent_psf_l1_max: 2.0
+  signed_monotonic_step_min_px: 1.0e-4
+  reference_crop_retained_mass_min: 0.99
+  combined_support_retained_mass_min: 0.99
+
+output:
+  root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_pdraw_family_smoke_v2_2d
+
+data_isolation:
+  real_pdraw_accessed: false
+  google_dev_accessed: false
+  google_holdout_accessed: false
+  dp5k_accessed: false
+  stereo_training_run: false

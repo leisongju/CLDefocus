@@ -17,7 +17,7 @@ import re
 import subprocess
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -70,6 +70,94 @@ class ResponseProfile:
     lr_throughput_delta: float
     field_lr_throughput_slope: float
     aperture_lr_throughput_slope: float
+
+
+@dataclass(frozen=True)
+class LowOrderAberrationProfile:
+    """同一基础镜头 family 上叠加的低阶 pupil phase，系数单位为 waves。
+
+    基函数刻意不含 defocus：signed CoC 仍只由 sensor propagation 决定。field 项
+    在归一化水平视场上作线性变化，使像差随机化与 pupil response、PD centroid
+    slope、aperture 四个轴彼此独立。
+    """
+
+    astigmatism_0_waves: float = 0.0
+    astigmatism_45_waves: float = 0.0
+    coma_x_waves: float = 0.0
+    coma_y_waves: float = 0.0
+    spherical_waves: float = 0.0
+    field_astigmatism_0_waves_per_norm: float = 0.0
+    field_astigmatism_45_waves_per_norm: float = 0.0
+    field_coma_x_waves_per_norm: float = 0.0
+    field_coma_y_waves_per_norm: float = 0.0
+
+
+def low_order_aberration_waves(
+    pupil_x: Any,
+    pupil_y: Any,
+    valid_mask: Any,
+    profile: LowOrderAberrationProfile,
+    *,
+    field_x: float,
+    field_y: float = 0.0,
+) -> tuple[Any, dict[str, Any]]:
+    """在归一化椭圆 pupil 上生成零 piston 的低阶 phase screen（waves）。"""
+
+    import jax.numpy as jnp
+
+    x = jnp.asarray(pupil_x)
+    y = jnp.asarray(pupil_y)
+    valid = jnp.asarray(valid_mask, dtype=bool) & jnp.isfinite(x) & jnp.isfinite(y)
+    inf = jnp.asarray(jnp.inf, dtype=x.dtype)
+    x_min = jnp.min(jnp.where(valid, x, inf))
+    x_max = jnp.max(jnp.where(valid, x, -inf))
+    y_min = jnp.min(jnp.where(valid, y, inf))
+    y_max = jnp.max(jnp.where(valid, y, -inf))
+    center_x = 0.5 * (x_min + x_max)
+    center_y = 0.5 * (y_min + y_max)
+    radius_x = jnp.maximum(0.5 * (x_max - x_min), 1.0e-20)
+    radius_y = jnp.maximum(0.5 * (y_max - y_min), 1.0e-20)
+    ux = (x - center_x) / radius_x
+    uy = (y - center_y) / radius_y
+    radius_squared = ux**2 + uy**2
+    field_value = float(field_x)
+    field_y_value = float(field_y)
+    astigmatism_0 = (
+        float(profile.astigmatism_0_waves)
+        + field_value * float(profile.field_astigmatism_0_waves_per_norm)
+    )
+    coma_x = (
+        float(profile.coma_x_waves)
+        + field_value * float(profile.field_coma_x_waves_per_norm)
+    )
+    astigmatism_45 = (
+        float(profile.astigmatism_45_waves)
+        + field_y_value * float(profile.field_astigmatism_45_waves_per_norm)
+    )
+    coma_y = (
+        float(profile.coma_y_waves)
+        + field_y_value * float(profile.field_coma_y_waves_per_norm)
+    )
+    screen = (
+        astigmatism_0 * (ux**2 - uy**2)
+        + astigmatism_45 * (2.0 * ux * uy)
+        + coma_x * ((3.0 * radius_squared - 2.0) * ux)
+        + coma_y * ((3.0 * radius_squared - 2.0) * uy)
+        + float(profile.spherical_waves)
+        * (6.0 * radius_squared**2 - 6.0 * radius_squared + 1.0)
+    )
+    valid_count = jnp.maximum(jnp.count_nonzero(valid), 1)
+    piston = jnp.where(valid, screen, 0.0).sum() / valid_count
+    screen = jnp.where(valid, screen - piston, 0.0)
+    return screen, {
+        "basis": "unnormalized_low_order_zernike_like_no_defocus_v1",
+        "coefficient_unit": "waves",
+        "effective_astigmatism_0_waves": astigmatism_0,
+        "effective_astigmatism_45_waves": astigmatism_45,
+        "effective_coma_x_waves": coma_x,
+        "effective_coma_y_waves": coma_y,
+        "piston_removed_waves": piston,
+    }
 
 
 def _profile_seed(master_seed: int, profile_id: str, values: Sequence[float]) -> int:
@@ -378,6 +466,128 @@ def aperture_transition_scale(
     if not math.isfinite(scale) or scale <= 0.0:
         raise ValueError(f"profile {profile.profile_id} aperture transition scale 非法")
     return float(scale)
+
+
+def resolve_aperture_cross_talk_by_f_number(
+    profile_cfg: dict[str, Any],
+    catalog: Sequence[ResponseProfile],
+    f_numbers: Sequence[float],
+) -> dict[str, Any]:
+    """解析可选的 profile×f-number 精确 cross-talk 表。
+
+    未声明时严格返回 profile 自带 ``cross_talk``。启用时每个 profile 必须为配置
+    中每档 f-number 提供且仅提供一个值；该表只进入 pupil power mixing，不接触
+    centroid label、NCC 估计或准入阈值。
+    """
+
+    profile_ids = [profile.profile_id for profile in catalog]
+    aperture_values = [float(value) for value in f_numbers]
+    source = profile_cfg.get("aperture_cross_talk_by_f_number")
+    if source is None:
+        return {
+            "enabled": False,
+            "mode": "disabled_profile_default",
+            "match_tolerance": 0.0,
+            "values_by_profile_id": {
+                profile.profile_id: {
+                    f"{value:g}": float(profile.cross_talk)
+                    for value in aperture_values
+                }
+                for profile in catalog
+            },
+            "changes_psf_response": False,
+            "changes_labels_or_ncc_admission": False,
+        }
+    if not isinstance(source, dict):
+        raise ValueError("aperture_cross_talk_by_f_number 必须为 mapping 或 null")
+    expected = {"mode", "match_tolerance", "values_by_profile_id"}
+    if set(source) != expected:
+        raise ValueError(
+            "aperture_cross_talk_by_f_number 字段必须精确为 "
+            f"{sorted(expected)}"
+        )
+    if str(source["mode"]) != "exact_f_number_map_v1":
+        raise ValueError("aperture_cross_talk_by_f_number.mode 不受支持")
+    tolerance = source["match_tolerance"]
+    if isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)):
+        raise ValueError("aperture cross-talk match_tolerance 必须为 numeric")
+    tolerance = float(tolerance)
+    if not math.isfinite(tolerance) or tolerance < 0.0:
+        raise ValueError("aperture cross-talk match_tolerance 必须为有限非负数")
+    raw_profiles = source["values_by_profile_id"]
+    if not isinstance(raw_profiles, dict) or set(raw_profiles) != set(profile_ids):
+        raise ValueError(
+            "aperture cross-talk values_by_profile_id 必须与 catalog ID 精确一致"
+        )
+    resolved_values: dict[str, dict[str, float]] = {}
+    for profile_id in profile_ids:
+        row = raw_profiles[profile_id]
+        if not isinstance(row, dict):
+            raise ValueError(f"profile {profile_id} cross-talk 表必须为 mapping")
+        parsed: list[tuple[float, float]] = []
+        for raw_f_number, raw_value in row.items():
+            if isinstance(raw_f_number, bool):
+                raise ValueError("aperture cross-talk f-number key 不得为 bool")
+            try:
+                f_number = float(raw_f_number)
+            except (TypeError, ValueError) as error:
+                raise ValueError("aperture cross-talk f-number key 必须可解析为数值") from error
+            if isinstance(raw_value, bool) or not isinstance(raw_value, (int, float)):
+                raise ValueError("aperture cross-talk value 必须为 numeric")
+            value = float(raw_value)
+            if not math.isfinite(f_number) or f_number <= 0.0:
+                raise ValueError("aperture cross-talk f-number 必须为有限正数")
+            if not math.isfinite(value) or not 0.0 <= value < 0.5:
+                raise ValueError("aperture cross-talk value 必须位于 [0,0.5)")
+            parsed.append((f_number, value))
+        if len(parsed) != len(aperture_values):
+            raise ValueError(
+                f"profile {profile_id} cross-talk 表必须覆盖全部 f-number"
+            )
+        used: set[int] = set()
+        canonical: dict[str, float] = {}
+        for configured_f, value in parsed:
+            distances = [abs(configured_f - target) for target in aperture_values]
+            index = int(np.argmin(distances))
+            if distances[index] > tolerance or index in used:
+                raise ValueError(
+                    f"profile {profile_id} cross-talk f-number 无法唯一匹配冻结光圈"
+                )
+            used.add(index)
+            canonical[f"{aperture_values[index]:g}"] = value
+        if len(used) != len(aperture_values):
+            raise ValueError(
+                f"profile {profile_id} cross-talk 表未覆盖全部冻结光圈"
+            )
+        resolved_values[profile_id] = canonical
+    return {
+        "enabled": True,
+        "mode": "exact_f_number_map_v1",
+        "match_tolerance": tolerance,
+        "values_by_profile_id": resolved_values,
+        "changes_psf_response": True,
+        "changes_labels_or_ncc_admission": False,
+    }
+
+
+def aperture_cross_talk(
+    profile: ResponseProfile,
+    f_number: float,
+    law: dict[str, Any],
+) -> float:
+    """返回当前 profile/f-number 的 pupil cross-talk。"""
+
+    if not bool(law["enabled"]):
+        return float(profile.cross_talk)
+    values = law["values_by_profile_id"][profile.profile_id]
+    target = float(f_number)
+    candidates = [(abs(float(key) - target), float(value)) for key, value in values.items()]
+    distance, value = min(candidates, key=lambda row: row[0])
+    if distance > float(law["match_tolerance"]):
+        raise ValueError(
+            f"profile {profile.profile_id} 没有匹配 f/{target:g} 的 cross-talk"
+        )
+    return value
 
 
 def build_profile_catalog_document(
@@ -949,8 +1159,10 @@ def _propagate_profile_pair(
     pixel_pitch_m: float,
     profile: ResponseProfile,
     field_x: float,
+    field_y: float = 0.0,
     upsample: int,
     aperture_transition_scale_value: float = 1.0,
+    aberration_profile: LowOrderAberrationProfile | None = None,
 ) -> dict[str, Any]:
     """将同一完整镜头出口波前按一个 response profile 分成左右通道传播。"""
 
@@ -994,6 +1206,23 @@ def _propagate_profile_pair(
         edge_rolloff=profile.microlens_edge_rolloff,
     )
     phase = opd_to_phase_factor(wf.wf.wvl, wf.wf.opd)
+    aberration_meta: dict[str, Any] = {
+        "basis": "none",
+        "coefficient_unit": "waves",
+        "effective_astigmatism_0_waves": 0.0,
+        "effective_coma_x_waves": 0.0,
+        "piston_removed_waves": 0.0,
+    }
+    if aberration_profile is not None:
+        screen_waves, aberration_meta = low_order_aberration_waves(
+            wf.wf.pts[..., 0],
+            wf.wf.pts[..., 1],
+            wf.wf.mask,
+            aberration_profile,
+            field_x=float(field_x),
+            field_y=float(field_y),
+        )
+        phase = phase * jnp.exp(2j * jnp.pi * screen_waves)
     base_amplitude = jnp.asarray(wf.wf.amp)
     normal = safeop.normdir(wf.xp_sphere.c[None] - wf.wf.pts).v
 
@@ -1025,6 +1254,7 @@ def _propagate_profile_pair(
         ),
         "local_split_bias_norm": local_split,
         "local_transition_width": local_width,
+        "low_order_aberration": aberration_meta,
         **pupil_meta,
     }
 
@@ -1038,9 +1268,11 @@ def _propagate_profile_batch(
     kernel_size: int,
     profiles: Sequence[ResponseProfile],
     field_x: float,
+    field_y: float = 0.0,
     upsample: int,
     sensor_chunk_size: int = 256,
     aperture_transition_scales: Sequence[float] | None = None,
+    aberration_profiles: Sequence[LowOrderAberrationProfile] | None = None,
 ) -> list[dict[str, Any]]:
     """共享同一 RS 几何核，一次传播多个 profile 的左右复振幅。"""
 
@@ -1068,6 +1300,8 @@ def _propagate_profile_batch(
         not math.isfinite(value) or value <= 0.0 for value in transition_scales
     ):
         raise ValueError("aperture_transition_scales 必须与 profiles 等长且全部为有限正数")
+    if aberration_profiles is not None and len(aberration_profiles) != len(profiles):
+        raise ValueError("aberration_profiles 必须为 null 或与 profiles 等长")
     z_prop = parax.xp.z + float(s_prop)
     viewport_xy_world = project_to_z(z_prop, wf.chief).ray.o[0:2]
     viewport_xy_pix = sensor.quantize(viewport_xy_world).index
@@ -1081,8 +1315,19 @@ def _propagate_profile_batch(
     eval_points = vecop.xy2xyz(eval_points, z_prop)
 
     powers: list[Any] = []
+    aberration_phases: list[Any] = []
     metas: list[dict[str, Any]] = []
-    for profile, transition_scale in zip(profiles, transition_scales, strict=True):
+    resolved_aberrations = (
+        [None] * len(profiles)
+        if aberration_profiles is None
+        else list(aberration_profiles)
+    )
+    for profile, transition_scale, aberration_profile in zip(
+        profiles,
+        transition_scales,
+        resolved_aberrations,
+        strict=True,
+    ):
         local_split = profile.split_bias_norm + profile.field_split_slope * float(field_x)
         local_width = profile.transition_width * transition_scale * (
             1.0 + profile.field_acceptance_slope * float(field_x)
@@ -1098,6 +1343,26 @@ def _propagate_profile_batch(
             edge_rolloff=profile.microlens_edge_rolloff,
         )
         powers.extend((left, right))
+        aberration_meta: dict[str, Any] = {
+            "basis": "none",
+            "coefficient_unit": "waves",
+            "effective_astigmatism_0_waves": 0.0,
+            "effective_coma_x_waves": 0.0,
+            "piston_removed_waves": 0.0,
+        }
+        if aberration_profile is None:
+            profile_phase = jnp.ones_like(left, dtype=jnp.complex64)
+        else:
+            screen_waves, aberration_meta = low_order_aberration_waves(
+                wf.wf.pts[..., 0],
+                wf.wf.pts[..., 1],
+                wf.wf.mask,
+                aberration_profile,
+                field_x=float(field_x),
+                field_y=float(field_y),
+            )
+            profile_phase = jnp.exp(2j * jnp.pi * screen_waves)
+        aberration_phases.extend((profile_phase, profile_phase))
         metas.append(
             {
                 "left_effective_pupil_power": left.sum(),
@@ -1108,13 +1373,28 @@ def _propagate_profile_batch(
                 ),
                 "local_split_bias_norm": local_split,
                 "local_transition_width": local_width,
+                "low_order_aberration": aberration_meta,
                 **pupil_meta,
             }
         )
     power_stack = jnp.stack(powers, axis=0)
     phase = opd_to_phase_factor(wf.wf.wvl, wf.wf.opd)
     base_amplitude = jnp.asarray(wf.wf.amp)
-    waves = base_amplitude[None] * jnp.sqrt(jnp.maximum(power_stack, 0.0)) * phase[None]
+    if aberration_profiles is None:
+        # 保留旧路径的运算顺序，默认配置输出不因新接口产生数值漂移。
+        waves = (
+            base_amplitude[None]
+            * jnp.sqrt(jnp.maximum(power_stack, 0.0))
+            * phase[None]
+        )
+    else:
+        aberration_phase_stack = jnp.stack(aberration_phases, axis=0)
+        waves = (
+            base_amplitude[None]
+            * jnp.sqrt(jnp.maximum(power_stack, 0.0))
+            * phase[None]
+            * aberration_phase_stack
+        )
     normal = safeop.normdir(wf.xp_sphere.c[None] - wf.wf.pts).v
     pts = wf.wf.pts
     wavelength = wf.wf.wvl
@@ -2720,6 +3000,7 @@ def _render_profile(
     optical: dict[str, Any],
     resolved: dict[str, Any],
     transition_law: dict[str, Any],
+    cross_talk_law: dict[str, Any],
 ) -> tuple[np.ndarray, np.ndarray, list[dict[str, Any]]]:
     optics_cfg = resolved["optics"]
     sensor_cfg = resolved["sensor"]
@@ -2734,6 +3015,10 @@ def _render_profile(
     labels = np.empty((aperture_count, coc_count, 1, field_count), dtype=np.float64)
     records: list[dict[str, Any]] = []
     for aperture_index, context in enumerate(optical["apertures"]):
+        local_cross_talk = aperture_cross_talk(
+            profile, float(context["actual_f_number"]), cross_talk_law
+        )
+        aperture_profile = replace(profile, cross_talk=local_cross_talk)
         transition_scale = aperture_transition_scale(
             profile,
             float(context["actual_f_number"]),
@@ -2754,7 +3039,7 @@ def _render_profile(
                     sensor=context["imaging"].sen,
                     kernel_size=kernel_size,
                     pixel_pitch_m=float(sensor_cfg["pixel_pitch_m"]),
-                    profile=profile,
+                    profile=aperture_profile,
                     field_x=float(field_x),
                     upsample=int(optics_cfg.get("upsample", 1)),
                     aperture_transition_scale_value=transition_scale,
@@ -2793,6 +3078,7 @@ def _render_profile(
                         "pupil_overlap_fraction": float(propagated["pupil_overlap_fraction"]),
                         "aperture_transition_power_exponent": transition_exponent,
                         "aperture_transition_scale": transition_scale,
+                        "aperture_cross_talk": local_cross_talk,
                         "pupil_center_x_m": float(propagated["pupil_center_x_m"]),
                         "pupil_radius_x_m": float(propagated["pupil_radius_x_m"]),
                         "split_x_center_m": float(propagated["split_x_center_m"]),
@@ -2808,6 +3094,7 @@ def _render_profile_batch(
     optical: dict[str, Any],
     resolved: dict[str, Any],
     transition_law: dict[str, Any],
+    cross_talk_law: dict[str, Any],
 ) -> dict[str, tuple[np.ndarray, np.ndarray, list[dict[str, Any]]]]:
     """用共享 RS 几何批量渲染一组 profile，输出与逐 profile 路径同形。"""
 
@@ -2837,6 +3124,16 @@ def _render_profile_batch(
         profile.profile_id: [] for profile in profiles
     }
     for aperture_index, context in enumerate(optical["apertures"]):
+        aperture_cross_talks = [
+            aperture_cross_talk(
+                profile, float(context["actual_f_number"]), cross_talk_law
+            )
+            for profile in profiles
+        ]
+        aperture_profiles = [
+            replace(profile, cross_talk=value)
+            for profile, value in zip(profiles, aperture_cross_talks, strict=True)
+        ]
         transition_scales = [
             aperture_transition_scale(
                 profile,
@@ -2856,7 +3153,7 @@ def _render_profile_batch(
                     parax=context["imaging"].parax,
                     sensor=context["imaging"].sen,
                     kernel_size=kernel_size,
-                    profiles=profiles,
+                    profiles=aperture_profiles,
                     field_x=float(field_x),
                     upsample=int(optics_cfg.get("upsample", 1)),
                     sensor_chunk_size=int(
@@ -2907,6 +3204,9 @@ def _render_profile_batch(
                             ),
                             "aperture_transition_scale": float(
                                 transition_scales[profile_index]
+                            ),
+                            "aperture_cross_talk": float(
+                                aperture_cross_talks[profile_index]
                             ),
                             "pupil_center_x_m": float(propagated["pupil_center_x_m"]),
                             "pupil_radius_x_m": float(propagated["pupil_radius_x_m"]),
@@ -3016,6 +3316,11 @@ def generate(config_path: Path) -> dict[str, Any]:
     profile_cfg = resolved["profiles"]
     catalog, catalog_source = resolve_profile_catalog(profile_cfg)
     transition_law = resolve_aperture_transition_power_law(profile_cfg, catalog)
+    cross_talk_law = resolve_aperture_cross_talk_by_f_number(
+        profile_cfg,
+        catalog,
+        resolved["apertures"]["f_numbers"],
+    )
     early_diagnostic_cfg = dict(resolved["diagnostic"])
     early_ncc_gates = dict(early_diagnostic_cfg["ncc_gates"])
     if str(early_ncc_gates.get("admission_mode")) == (
@@ -3047,6 +3352,15 @@ def generate(config_path: Path) -> dict[str, Any]:
                 float(f_number),
                 transition_law,
             )
+            local_cross_talk = aperture_cross_talk(
+                profile,
+                float(f_number),
+                cross_talk_law,
+            )
+            if not math.isfinite(local_cross_talk) or not 0.0 <= local_cross_talk < 0.5:
+                raise ValueError(
+                    f"profile {profile.profile_id} 在 f/{f_number} 的 cross-talk 非法"
+                )
             for field_x in resolved["optics"]["field_x_normalized"]:
                 local_width = profile.transition_width * transition_scale * (
                     1.0 + profile.field_acceptance_slope * float(field_x)
@@ -3181,6 +3495,7 @@ def generate(config_path: Path) -> dict[str, Any]:
                 optical,
                 resolved,
                 transition_law,
+                cross_talk_law,
             )
             overlap = set(batch_results) & set(chunk_results)
             if overlap:
@@ -3221,6 +3536,7 @@ def generate(config_path: Path) -> dict[str, Any]:
                     optical,
                     resolved,
                     transition_law,
+                    cross_talk_law,
                 )
             raw_render_labels = np.asarray(labels, dtype=np.float64).copy()
             calibration: FieldOriginCalibrationResult | None = None
@@ -3753,6 +4069,7 @@ def generate(config_path: Path) -> dict[str, Any]:
             else "current_parabolic_or_aggregate_legacy"
         ),
         "aperture_transition_response": transition_law,
+        "aperture_cross_talk_response": cross_talk_law,
         "shifted_identical_oracle_updates_labels": False,
         "shifted_identical_oracle_updates_admission": False,
         "accepted_profiles": accepted,
@@ -3880,6 +4197,7 @@ def generate(config_path: Path) -> dict[str, Any]:
         )
         == "per_aperture_continuous_near_focus_v1",
         "aperture_transition_response": transition_law,
+        "aperture_cross_talk_response": cross_talk_law,
         "shifted_identical_oracle_label_compensation": False,
         "shifted_identical_oracle_admission_correction": False,
         "field_origin_calibration_enabled": calibration_enabled,

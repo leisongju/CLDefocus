@@ -1,0 +1,106 @@
+schema_version: 1
+
+run:
+  id: cldefocus_pdraw_family_production_16p_v1
+  purpose: 同一 Canon/DP5K 五光圈复合镜头 family 的 16 profile 正式训练 PSF bank
+
+source:
+  repository: https://github.com/lykelee/CLDefocus.git
+  checkout: /mnt/data/lsj/model/pytorchlightning/render/CLDefocus
+  commit: 2b61c570cf87a195aacbf357449234f9f56b412b
+  license: MIT
+
+lens:
+  root: /mnt/data/lsj/data/optics/cldefocus/lens-mytable-original
+  relative_path: prime/JP2018-205527_Example01P.mytable
+  sha256: 44ecff38064ae75429406eb466343ac2eeeec61a078bbde5dd67ad691dc7303a
+
+sensor:
+  width_px: 2560
+  height_px: 2560
+  pixel_pitch_m: 1.0e-5
+
+apertures:
+  f_numbers: [1.8, 2.0, 2.8, 4.0, 5.6]
+
+optics:
+  wavelength_m: 5.875618e-7
+  object_depth_m: 1000.0
+  field_x_normalized: [-0.65, 0.0, 0.65]
+  field_y_normalized: [-0.65, 0.0, 0.65]
+  target_signed_coc_bins_px: [-8.0, -4.0, -2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0, 4.0, 8.0]
+  sensor_offset_envelope_m: 0.0015
+  target_coc_tolerance_px: 1.0e-6
+  reference_kernel_size: 57
+  export_kernel_size: 49
+  upsample: 1
+
+family:
+  family_id: cldefocus_jp2018_same_family_randomized_16p_v1
+  asset_id: cldefocus_jp2018_family_16p5a_11c_3x3_k49_v1
+  batch_sensor_chunk_size: 32
+  batch_profile_chunk_size: 8
+  centroid_support_padding_px: 0
+  export_pdraw_mono_v1: true
+  aperture_centroid_scale_by_f_number:
+    "1.8": 1.00
+    "2.0": 0.98
+    "2.8": 0.94
+    "4.0": 0.90
+    "5.6": 0.86
+  randomization:
+    master_seed: 20260812
+    profile_count: 16
+    profile_id_prefix: F
+    ranges:
+      transition_width: [0.36, 0.52]
+      cross_talk: [0.005, 0.04]
+      split_bias_norm: [-0.02, 0.02]
+      boundary_curvature_norm: [-0.015, 0.015]
+      microlens_edge_rolloff: [0.0, 0.12]
+      field_split_slope: [-0.02, 0.02]
+      field_acceptance_slope: [-0.08, 0.08]
+      lr_throughput_delta: [-0.025, 0.025]
+      field_lr_throughput_slope: [-0.015, 0.015]
+      aperture_lr_throughput_slope: [-0.012, 0.012]
+      astigmatism_0_waves: [-0.04, 0.04]
+      astigmatism_45_waves: [-0.04, 0.04]
+      coma_x_waves: [-0.04, 0.04]
+      coma_y_waves: [-0.04, 0.04]
+      spherical_waves: [-0.03, 0.03]
+      field_astigmatism_0_waves_per_norm: [-0.04, 0.04]
+      field_astigmatism_45_waves_per_norm: [-0.04, 0.04]
+      field_coma_x_waves_per_norm: [-0.04, 0.04]
+      field_coma_y_waves_per_norm: [-0.04, 0.04]
+      centroid_slope_px_per_coc: [0.13, 0.19]
+
+pdoffset:
+  sample_range_px: [-0.25, 0.25]
+  smoke_probe_px: 0.125
+
+gates:
+  expected_profile_count: 16
+  expected_aperture_count: 5
+  expected_coc_count: 11
+  expected_field_grid_hw: [3, 3]
+  energy_abs_max: 2.0e-6
+  raw_support_border_width_px: 2
+  raw_support_inner_mass_min: 0.98
+  reference_crop_retained_mass_min: 0.995
+  retarget_retained_mass_min: 0.995
+  combined_support_retained_mass_min: 0.99
+  centroid_target_error_abs_max_px: 5.0e-5
+  zero_centroid_abs_max_px: 5.0e-5
+  pdoffset_probe_error_abs_max_px: 5.0e-5
+  adjacent_psf_l1_max: 1.999
+  signed_monotonic_step_min_px: 0.01
+
+output:
+  root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_pdraw_family_16p5a_11c_3x3_k49_v1
+
+data_isolation:
+  real_pdraw_accessed: false
+  google_dev_accessed: false
+  google_holdout_accessed: false
+  dp5k_accessed: false
+  stereo_training_run: false

@@ -1,0 +1,27 @@
+schema_version: 1
+
+run:
+  id: cldefocus_pdraw_family_raw_optical_export_16p_v1
+  asset_id: cldefocus_pdraw_family_16p5a_11c_3x3_k49_raw_optical_v1
+
+source:
+  asset_root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_pdraw_family_16p5a_11c_3x3_k49_v1
+  artifact_manifest_sha256: d00cf0c92550990abde3fc56c183421245bfc4270a345f82d36a8e97c9c64a52
+  psf_bank_sha256: 611c220750e78d5abdb4b518784a1724773e3fefc353bf2f2574f913367af493
+  parent_repository: /mnt/data/lsj/model/pytorchlightning
+  parent_loader_sha256: d8e38941a4c652cb132c464f8b0fa7a1c545c6d0f188350f54e91073b1598ebe
+  parent_renderer_sha256: 29e61ded6a5da868b727cb7f5e9bf8a65cec76bc4d6b1c280ad4b5a6244b76dd
+
+output:
+  root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_pdraw_family_16p5a_11c_3x3_k49_raw_optical_v1
+
+gates:
+  analytic_agreement_abs_max_px: 1.0e-6
+  energy_abs_max: 1.0e-6
+
+data_isolation:
+  real_pdraw_accessed: false
+  google_dev_accessed: false
+  google_holdout_accessed: false
+  dp5k_accessed: false
+  stereo_training_run: false
