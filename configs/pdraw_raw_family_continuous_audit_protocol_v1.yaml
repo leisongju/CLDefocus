@@ -1,0 +1,110 @@
+schema_version: 1
+
+run:
+  id: cldefocus_raw_family_continuous_audit_protocol_v1
+  purpose: 版本化 raw-family native、pair-common、common MTF 与 preserve-native-CoC0 DCC 组合分级协议模板
+
+source:
+  asset_root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_pdraw_family_16p5a_11c_3x3_k49_raw_optical_v1
+  artifact_manifest_sha256: d8eb06a030d5db010585e0fcc3264fc065ce0513fe6f1f1ae89377a18e8fa655
+  profile_ids: [F000, F001, F002, F003, F004, F005, F006, F007, F008, F009, F010, F011, F012, F013, F014, F015]
+
+# 该模板冻结所支持的操作组合，不代表这些未运行组合已经准入。
+candidates:
+  - id: native_raw
+    operations: [{kind: native}]
+  - id: pair_common_direct_s100_tc2
+    operations:
+      - {kind: pair_common, alignment: direct_mean, translation_mode: bilinear_center_fourier_place, common_shape_mtf_sigma_px: 1.0, clipped_negative_fraction_max: 0.02, transition_coc_px: 2.0, transition_power: 1.0}
+  - id: pair_common_direct_s100_tc4
+    operations:
+      - {kind: pair_common, alignment: direct_mean, translation_mode: bilinear_center_fourier_place, common_shape_mtf_sigma_px: 1.0, clipped_negative_fraction_max: 0.02, transition_coc_px: 4.0, transition_power: 1.0}
+  - id: pair_common_direct_s100_tc8
+    operations:
+      - {kind: pair_common, alignment: direct_mean, translation_mode: bilinear_center_fourier_place, common_shape_mtf_sigma_px: 1.0, clipped_negative_fraction_max: 0.02, transition_coc_px: 8.0, transition_power: 1.0}
+  - id: common_mtf_sigma050
+    operations: [{kind: common_mtf, sigma_px: 0.5}]
+  - id: common_mtf_sigma075
+    operations: [{kind: common_mtf, sigma_px: 0.75}]
+  - id: common_mtf_sigma100
+    operations: [{kind: common_mtf, sigma_px: 1.0}]
+  - id: common_mtf_sigma150
+    operations: [{kind: common_mtf, sigma_px: 1.5}]
+  - id: common_mtf_sigma200
+    operations: [{kind: common_mtf, sigma_px: 2.0}]
+  - id: pair_common_s100_tc8_dcc_nativezero
+    operations:
+      - {kind: pair_common, alignment: direct_mean, translation_mode: bilinear_center_fourier_place, common_shape_mtf_sigma_px: 1.0, clipped_negative_fraction_max: 0.02, transition_coc_px: 8.0, transition_power: 1.0}
+      - {kind: dcc_retarget, target_slopes_by_aperture: [0.15, 0.147, 0.141, 0.135, 0.129], anchor_mode: preserve_native_coc0, support_padding_px: 2}
+
+screen:
+  field_mode: center
+  coc_abs_max_px: 1.0
+  texture_size: 192
+  seeds: [20260811]
+  tile_size: 64
+  tiles_per_axis: 1
+  search_x: 4
+  search_y: 2
+  continuous_ncc: &continuous_ncc
+    protocol_version: continuous_lanczos_v2
+    interpolation: separable_lanczos_windowed_sinc_no_lookup_table
+    lanczos_radius: 24
+    refinement_radius_px: 0.999
+    coordinate_iterations: 1
+    optimizer_xatol_px: 1.0e-5
+    min_texture_std: 0.008
+    min_score: 0.20
+    max_lr_error_px: 0.60
+    max_vertical_shift_px: 0.75
+    peak_exclusion_x: 2
+    peak_exclusion_y: 1
+    final_score_tolerance: 1.0e-6
+    per_cell_valid_tile_fraction_min: 1.0
+    expected_aperture_count: 5
+    worker_count: 4
+    uses_ground_truth: false
+    applies_posthoc_label_correction: false
+
+validation:
+  field_mode: full_flattened
+  coc_abs_max_px: 1.0
+  texture_size: 384
+  seeds: [20260811]
+  tile_sizes: [64, 128]
+  tiles_per_axis: 1
+  search_x: 4
+  search_y: 2
+  continuous_ncc: *continuous_ncc
+
+gates:
+  slope_min: 0.95
+  slope_max: 1.05
+  r2_min: 0.99
+  sign_agreement_min: 1.0
+  sign_label_abs_min_px: 1.0e-5
+  valid_record_fraction_min: 1.0
+  centroid_abs_max_error_px: 0.002
+  retained_mass_min: 0.98
+
+selection:
+  minimum_screen_profiles: 2
+  max_candidates_for_validation: 2
+  max_profiles_for_validation: 4
+  minimum_validation_profiles: 2
+
+export:
+  enabled: false
+  asset_id: cldefocus_raw_family_continuous_audit_protocol_v1_no_auto_export
+  centroid_variant: raw_family_continuous_audit_protocol_v1_no_auto_export
+  asset_root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_raw_family_continuous_audit_protocol_v1_no_auto_export
+
+output:
+  root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/evaluations/cldefocus_raw_family_continuous_audit_protocol_v1
+
+data_isolation:
+  real_pdraw_accessed: false
+  google_dev_accessed: false
+  google_holdout_accessed: false
+  dp5k_accessed: false
+  stereo_training_run: false

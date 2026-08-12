@@ -87,7 +87,12 @@ _ABERRATION_AXES = (
     "field_coma_x_waves_per_norm",
     "field_coma_y_waves_per_norm",
 )
-_PROFILE_AXES = (*_RESPONSE_AXES, *_ABERRATION_AXES, "centroid_slope_px_per_coc")
+# 只有 response/aberration 轴会进入原始 CLDefocus propagation。centroid slope
+# 是 propagation 之后可选的 export-time 几何重定向轴；把两类轴分开记录，避免
+# raw-optical 资产把一个未参与成像的数值误报成有效的光学随机轴。
+_RAW_ACTIVE_AXES = (*_RESPONSE_AXES, *_ABERRATION_AXES)
+_EXPORT_RETARGET_AXES = ("centroid_slope_px_per_coc",)
+_PROFILE_AXES = (*_RAW_ACTIVE_AXES, *_EXPORT_RETARGET_AXES)
 
 
 def _sha256_json(value: Any) -> str:
@@ -202,7 +207,15 @@ def family_profile_document(profile: FamilyProfile) -> dict[str, Any]:
         "low_order_aberration": asdict(profile.aberration),
         "centroid_slope_px_per_coc": profile.centroid_slope_px_per_coc,
     }
-    return {**parameters, "parameter_sha256": _sha256_json(parameters)}
+    return {
+        **parameters,
+        "axis_contract": {
+            "raw_active_axes": list(_RAW_ACTIVE_AXES),
+            "export_retarget_axes": list(_EXPORT_RETARGET_AXES),
+            "centroid_slope_px_per_coc_role": "export_retarget_only",
+        },
+        "parameter_sha256": _sha256_json(parameters),
+    }
 
 
 def _prepare_family_optical_contexts(resolved: dict[str, Any]) -> dict[str, Any]:
@@ -341,8 +354,16 @@ def retarget_centroid_slope(
     *,
     support_padding_px: int,
     centroid_refinement_iterations: int = 6,
+    anchor_mode: str = "zero",
+    common_anchor_disparity_px: np.ndarray | Sequence[float] | float | None = None,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
-    """保持共同 centroid 与 morphology，只重定向 L/R 相对 centroid slope。"""
+    """保持共同 centroid 与 morphology，只重定向 L/R 相对 centroid slope。
+
+    ``zero`` 保留历史合同 ``target=slope*CoC``；``preserve_native_coc0`` 对每个
+    aperture×field 使用原始 CoC=0 optical disparity 作为 anchor；``common`` 使用
+    调用方冻结的公共 anchor。三种模式都只平移最终 PSF，输出 label 始终从变换后
+    kernel centroid 重算，PDOFFSET 不进入本函数。
+    """
 
     value = np.asarray(bank, dtype=np.float32)
     coc = np.asarray(signed_coc_bins_px, dtype=np.float64)
@@ -353,6 +374,49 @@ def retarget_centroid_slope(
     slopes = np.asarray(target_slopes_by_aperture, dtype=np.float64)
     if slopes.shape != (value.shape[0],) or np.any(slopes <= 0.0):
         raise ValueError("target slopes 必须与 aperture 轴等长且为正")
+    mode = str(anchor_mode)
+    if mode not in {"zero", "preserve_native_coc0", "common"}:
+        raise ValueError(
+            "anchor_mode 必须为 zero、preserve_native_coc0 或 common"
+        )
+    if mode != "common" and common_anchor_disparity_px is not None:
+        raise ValueError("只有 anchor_mode=common 才允许 common_anchor_disparity_px")
+    raw_labels = analytic_centroid_labels(value)
+    anchor_shape = (value.shape[0], value.shape[2], value.shape[3])
+    if mode == "zero":
+        anchors = np.zeros(anchor_shape, dtype=np.float64)
+    elif mode == "preserve_native_coc0":
+        zero_indices: list[int] = []
+        for aperture_index in range(value.shape[0]):
+            matches = np.flatnonzero(
+                np.abs(coc[aperture_index]) <= 1.0e-12
+            )
+            if matches.size != 1:
+                raise ValueError(
+                    "preserve_native_coc0 要求每个 aperture 恰有一个 CoC=0 bin"
+                )
+            zero_indices.append(int(matches[0]))
+        anchors = np.stack(
+            [
+                raw_labels[aperture_index, zero_index]
+                for aperture_index, zero_index in enumerate(zero_indices)
+            ],
+            axis=0,
+        )
+    else:
+        if common_anchor_disparity_px is None:
+            raise ValueError(
+                "anchor_mode=common 必须提供 common_anchor_disparity_px"
+            )
+        common = np.asarray(common_anchor_disparity_px, dtype=np.float64)
+        if not np.isfinite(common).all():
+            raise ValueError("common anchor 必须全部有限")
+        try:
+            anchors = np.broadcast_to(common, anchor_shape).copy()
+        except ValueError as error:
+            raise ValueError(
+                f"common anchor 无法广播到 {anchor_shape}：{common.shape}"
+            ) from error
     output_size = int(value.shape[-1]) + 2 * int(support_padding_px)
     output = np.empty((*value.shape[:-2], output_size, output_size), dtype=np.float32)
     retained: list[float] = []
@@ -361,9 +425,13 @@ def retarget_centroid_slope(
     refinement_iterations_used_max = 0
     for aperture_index in range(value.shape[0]):
         for coc_index in range(value.shape[1]):
-            target = float(slopes[aperture_index] * coc[aperture_index, coc_index])
             for field_y_index in range(value.shape[2]):
                 for field_x_index in range(value.shape[3]):
+                    target = float(
+                        anchors[aperture_index, field_y_index, field_x_index]
+                        + slopes[aperture_index]
+                        * coc[aperture_index, coc_index]
+                    )
                     pair = value[
                         aperture_index,
                         coc_index,
@@ -431,6 +499,10 @@ def retarget_centroid_slope(
         "common_centroid_preserved": True,
         "morphology_residual_preserved_except_bilinear_translation": True,
         "target_slopes_by_aperture": slopes.tolist(),
+        "anchor_mode": mode,
+        "anchor_disparity_px": anchors.tolist(),
+        "native_coc0_optical_bias_preserved": mode == "preserve_native_coc0",
+        "common_anchor_frozen_by_caller": mode == "common",
         "support_padding_px": int(support_padding_px),
         "centroid_refinement_iterations_max": int(centroid_refinement_iterations),
         "centroid_refinement_iterations_used_max": refinement_iterations_used_max,

@@ -1,0 +1,58 @@
+schema_version: 1
+
+run:
+  id: cldefocus_raw_family_pair_common_tc16_dcc5_candidate_export_v1
+  asset_id: cldefocus_pdraw_family_16p5a_11c_3x3_k49_paircommon_s1_tc16_dcc5_contncc_v1
+  centroid_variant: paircommon_direct_s1_tc16_dcc5_contncc_v1
+
+source:
+  asset_root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_pdraw_family_16p5a_11c_3x3_k49_raw_optical_v1
+  artifact_manifest_sha256: d8eb06a030d5db010585e0fcc3264fc065ce0513fe6f1f1ae89377a18e8fa655
+  profile_ids: [F000, F001, F002, F003, F004, F005, F006, F007, F008, F009, F010, F011, F012, F013, F014, F015]
+
+audits:
+  - tile_size: 64
+    root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/evaluations/cldefocus_raw_family_pair_common_tc16_dcc3_fullfield_k64_v1
+    summary_sha256: 5c57fdc1674309fdbae44db734fa483ff5712bf9dd9e312580a8c60b19671f7d
+    provenance_sha256: 23eb499e29aac671258cd0a539e3941a05870295aef2c5736d1ac443ee4f48d0
+    screens_sha256: 424acdbe889e9a6c9ef5781a65e06470b5da9b89ca8233bafc5ff44f6bb1b703
+  - tile_size: 128
+    root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/evaluations/cldefocus_raw_family_pair_common_tc16_dcc5_fullfield_k128_v1
+    summary_sha256: 2cce5efb5763126b8afd71b9945edf0150f630f949c0f14f16605e40ccca6914
+    provenance_sha256: ce9e3b378e6d409e134332413c8b30b57f1da68b7930ddbc71033ecd80a88048
+    screens_sha256: f7e0df273cd7c33230a91148d1f2ce669993781bd91c4cfccd7e003dae78052e
+
+candidate:
+  id: dcc5_pair_common_direct_hybrid_s100_tc16
+  operations:
+    - kind: dcc_retarget
+      target_slopes_by_aperture: [0.2, 0.2, 0.2, 0.2, 0.2]
+      support_padding_px: 0
+      anchor_mode: preserve_native_coc0
+    - kind: pair_common
+      alignment: direct_mean
+      translation_mode: bilinear_center_fourier_place
+      common_shape_mtf_sigma_px: 1.0
+      clipped_negative_fraction_max: 0.02
+      transition_coc_px: 16.0
+      transition_power: 1.0
+
+parent:
+  repository: /mnt/data/lsj/model/pytorchlightning
+  loader_sha256: e2f0371513a6b0224ca84bd15eca7d8694444cb128c2d338ae62e744fe2a6e20
+  renderer_sha256: 327a65e83127177758f6e03fcfae3339b557c314e4e2919cf0d9346a1f5833c6
+
+gates:
+  centroid_abs_max_error_px: 0.002
+  parent_centroid_abs_max_error_px: 1.0e-6
+  retained_mass_min: 0.98
+
+output:
+  root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_pdraw_family_16p5a_11c_3x3_k49_paircommon_s1_tc16_dcc5_contncc_v1
+
+data_isolation:
+  real_pdraw_accessed: false
+  google_dev_accessed: false
+  google_holdout_accessed: false
+  dp5k_accessed: false
+  stereo_training_run: false

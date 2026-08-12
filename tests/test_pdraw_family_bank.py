@@ -9,7 +9,9 @@ import torch
 import yaml
 
 from pdraw_adapter.family_bank import (
+    _EXPORT_RETARGET_AXES,
     _PROFILE_AXES,
+    _RAW_ACTIVE_AXES,
     _atomic_torch_save,
     _chunk_cache_identity,
     _load_config,
@@ -94,6 +96,16 @@ def test_named_random_axes_are_independent_and_deterministic() -> None:
         )
 
 
+def test_family_axis_contract_separates_raw_and_export_retarget_axes() -> None:
+    assert set(_RAW_ACTIVE_AXES).isdisjoint(_EXPORT_RETARGET_AXES)
+    assert _PROFILE_AXES == (*_RAW_ACTIVE_AXES, *_EXPORT_RETARGET_AXES)
+    profile = sample_family_profiles(_valid_randomization_config())[0]
+    contract = family_profile_document(profile)["axis_contract"]
+    assert contract["raw_active_axes"] == list(_RAW_ACTIVE_AXES)
+    assert contract["export_retarget_axes"] == list(_EXPORT_RETARGET_AXES)
+    assert contract["centroid_slope_px_per_coc_role"] == "export_retarget_only"
+
+
 def test_low_order_screen_has_zero_piston_and_field_variation() -> None:
     coordinates = np.linspace(-1.0, 1.0, 9, dtype=np.float32)
     yy, xx = np.meshgrid(coordinates, coordinates, indexing="ij")
@@ -169,6 +181,54 @@ def test_centroid_retarget_and_pdoffset_are_independent() -> None:
     np.testing.assert_allclose(labels[:, 1], 0.0, atol=2.0e-7, rtol=0.0)
 
 
+def test_centroid_retarget_preserves_native_coc0_optical_bias() -> None:
+    bank = np.zeros((1, 3, 1, 2, 2, 11, 11), dtype=np.float32)
+    # 两个 field 的原生 CoC=0 disparity 分别为 +1 与 -1 px；它们不是 PDOFFSET。
+    for coc_index in range(3):
+        bank[0, coc_index, 0, 0, 0, 5, 6] = 1.0
+        bank[0, coc_index, 0, 0, 1, 5, 5] = 1.0
+        bank[0, coc_index, 0, 1, 0, 5, 4] = 1.0
+        bank[0, coc_index, 0, 1, 1, 5, 5] = 1.0
+    output, labels, metadata = retarget_centroid_slope(
+        bank,
+        np.asarray([-1.0, 0.0, 1.0]),
+        [0.25],
+        support_padding_px=2,
+        anchor_mode="preserve_native_coc0",
+    )
+    np.testing.assert_allclose(
+        labels[0, :, 0],
+        [[0.75, -1.25], [1.0, -1.0], [1.25, -0.75]],
+        atol=2.0e-7,
+        rtol=0.0,
+    )
+    np.testing.assert_allclose(labels, analytic_centroid_labels(output), atol=0.0, rtol=0.0)
+    assert metadata["anchor_mode"] == "preserve_native_coc0"
+    assert metadata["native_coc0_optical_bias_preserved"] is True
+    assert metadata["pd_offset_embedded"] is False
+
+
+def test_centroid_retarget_accepts_frozen_common_anchor() -> None:
+    kernel = np.zeros((9, 9), dtype=np.float32)
+    kernel[4, 4] = 1.0
+    bank = np.tile(kernel, (1, 3, 1, 2, 2, 1, 1))
+    _, labels, metadata = retarget_centroid_slope(
+        bank,
+        np.asarray([-1.0, 0.0, 1.0]),
+        [0.2],
+        support_padding_px=2,
+        anchor_mode="common",
+        common_anchor_disparity_px=np.asarray([[[0.1, -0.2]]]),
+    )
+    np.testing.assert_allclose(
+        labels[0, :, 0],
+        [[-0.1, -0.4], [0.1, -0.2], [0.3, 0.0]],
+        atol=2.0e-7,
+        rtol=0.0,
+    )
+    assert metadata["common_anchor_frozen_by_caller"] is True
+
+
 def test_raw_optical_payload_recomputes_labels_and_declares_native_contract() -> None:
     bank = torch.zeros(2, 3, 1, 1, 2, 9, 9)
     bank[:, :, 0, 0, 0, 4, 5] = 1.0
@@ -203,6 +263,15 @@ def test_raw_optical_payload_recomputes_labels_and_declares_native_contract() ->
     assert payload["centroid_policy"] == "native"
     assert payload["centroid_variant"] == "raw_optical_v1"
     assert payload["pdoffset_embedded"] is False
+    assert payload["profile_axis_contract"]["raw_active_axes"] == list(
+        _RAW_ACTIVE_AXES
+    )
+    assert payload["profile_axis_contract"][
+        "inactive_profile_parameters_for_raw_export"
+    ] == ["centroid_slope_px_per_coc"]
+    assert payload["profile_axis_contract"][
+        "centroid_slope_px_per_coc_active"
+    ] is False
     torch.testing.assert_close(
         payload["analytic_disparity_bins_px"], analytic[0], atol=0.0, rtol=0.0
     )

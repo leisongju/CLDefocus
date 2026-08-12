@@ -1,0 +1,93 @@
+schema_version: 1
+
+run:
+  id: cldefocus_raw_family_pair_common_transition_debug_k64_v1
+  purpose: F000/F001 固定 direct shared morphology sigma1，中心 K64 定位最小 matching-preserve transition
+
+source:
+  asset_root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_pdraw_family_16p5a_11c_3x3_k49_raw_optical_v1
+  artifact_manifest_sha256: d8eb06a030d5db010585e0fcc3264fc065ce0513fe6f1f1ae89377a18e8fa655
+  profile_ids: [F000, F001]
+
+candidates:
+  - id: pair_common_direct_hybrid_s100_tc8
+    operations:
+      - {kind: pair_common, alignment: direct_mean, translation_mode: bilinear_center_fourier_place, common_shape_mtf_sigma_px: 1.0, clipped_negative_fraction_max: 0.02, transition_coc_px: 8.0, transition_power: 1.0}
+  - id: pair_common_direct_hybrid_s100_tc16
+    operations:
+      - {kind: pair_common, alignment: direct_mean, translation_mode: bilinear_center_fourier_place, common_shape_mtf_sigma_px: 1.0, clipped_negative_fraction_max: 0.02, transition_coc_px: 16.0, transition_power: 1.0}
+  - id: pair_common_direct_hybrid_s100_tc32
+    operations:
+      - {kind: pair_common, alignment: direct_mean, translation_mode: bilinear_center_fourier_place, common_shape_mtf_sigma_px: 1.0, clipped_negative_fraction_max: 0.02, transition_coc_px: 32.0, transition_power: 1.0}
+
+screen:
+  field_mode: center
+  coc_abs_max_px: 1.0
+  texture_size: 192
+  seeds: [20260811]
+  tile_size: 64
+  tiles_per_axis: 1
+  search_x: 4
+  search_y: 2
+  continuous_ncc: &continuous_ncc
+    protocol_version: continuous_lanczos_v2
+    interpolation: separable_lanczos_windowed_sinc_no_lookup_table
+    lanczos_radius: 24
+    refinement_radius_px: 0.999
+    coordinate_iterations: 1
+    optimizer_xatol_px: 1.0e-5
+    min_texture_std: 0.008
+    min_score: 0.20
+    max_lr_error_px: 0.60
+    max_vertical_shift_px: 0.75
+    peak_exclusion_x: 2
+    peak_exclusion_y: 1
+    final_score_tolerance: 1.0e-6
+    per_cell_valid_tile_fraction_min: 1.0
+    expected_aperture_count: 5
+    worker_count: 4
+    uses_ground_truth: false
+    applies_posthoc_label_correction: false
+
+validation:
+  field_mode: full_flattened
+  coc_abs_max_px: 1.0
+  texture_size: 384
+  seeds: [20260811, 20260812, 20260813]
+  tile_sizes: [64, 128]
+  tiles_per_axis: 1
+  search_x: 4
+  search_y: 2
+  continuous_ncc: *continuous_ncc
+
+gates:
+  slope_min: 0.95
+  slope_max: 1.05
+  r2_min: 0.99
+  sign_agreement_min: 1.0
+  sign_label_abs_min_px: 1.0e-5
+  valid_record_fraction_min: 1.0
+  centroid_abs_max_error_px: 0.002
+  retained_mass_min: 0.98
+
+selection:
+  minimum_screen_profiles: 1
+  max_candidates_for_validation: 0
+  max_profiles_for_validation: 2
+  minimum_validation_profiles: 1
+
+export:
+  enabled: false
+  asset_id: cldefocus_pair_common_transition_debug_no_export
+  centroid_variant: pair_common_transition_debug_no_export
+  asset_root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_pair_common_transition_debug_no_export
+
+output:
+  root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/evaluations/cldefocus_raw_family_pair_common_transition_debug_k64_v1
+
+data_isolation:
+  real_pdraw_accessed: false
+  google_dev_accessed: false
+  google_holdout_accessed: false
+  dp5k_accessed: false
+  stereo_training_run: false

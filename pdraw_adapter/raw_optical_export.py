@@ -19,7 +19,11 @@ import numpy as np
 import torch
 import yaml
 
-from .family_bank import analytic_centroid_labels
+from .family_bank import (
+    _EXPORT_RETARGET_AXES,
+    _RAW_ACTIVE_AXES,
+    analytic_centroid_labels,
+)
 
 
 def _sha256_file(path: Path) -> str:
@@ -185,6 +189,14 @@ def build_raw_profile_payload(
         "family_id": source_payload["family_id"],
         "family_sha256": source_payload["family_sha256"],
         "family_profile": profile_document,
+        "profile_axis_contract": {
+            "raw_active_axes": list(_RAW_ACTIVE_AXES),
+            "inactive_export_retarget_axes": list(_EXPORT_RETARGET_AXES),
+            "inactive_profile_parameters_for_raw_export": list(
+                _EXPORT_RETARGET_AXES
+            ),
+            "centroid_slope_px_per_coc_active": False,
+        },
         "centroid_policy": "native",
         "centroid_variant": "raw_optical_v1",
         "pdoffset_embedded": False,
@@ -201,6 +213,8 @@ def build_raw_profile_payload(
             "ncc_role": "none_never_label_writeback",
             "same_lens_shared_ray_geometry": True,
             "source_family_asset_id": source_payload["asset_id"],
+            "raw_active_axes": list(_RAW_ACTIVE_AXES),
+            "inactive_export_retarget_axes": list(_EXPORT_RETARGET_AXES),
         },
         "f_numbers": torch.as_tensor(source_payload["f_numbers"]).detach().clone(),
         "signed_coc_bins_px": torch.as_tensor(
@@ -250,6 +264,8 @@ def validate_with_parent_loader(
     profile_rows: Sequence[dict[str, Any]],
     f_numbers: torch.Tensor,
     analytic_tolerance_px: float,
+    expected_centroid_policy: str = "native",
+    expected_centroid_variant: str = "raw_optical_v1",
 ) -> dict[str, Any]:
     """用冻结 parent loader 全量读取 profile×aperture，并做 bank-mode smoke。"""
 
@@ -274,8 +290,10 @@ def validate_with_parent_loader(
         relative_path = Path(str(profile_row["relative_path"]))
         profile_path = staging_root / relative_path
         payload = torch.load(profile_path, map_location="cpu", weights_only=True)
-        if payload.get("centroid_policy") != "native" or payload.get("centroid_variant") != "raw_optical_v1":
-            raise RuntimeError(f"raw-optical 顶层 centroid 契约缺失：{profile_path}")
+        if payload.get("centroid_policy") != expected_centroid_policy or payload.get(
+            "centroid_variant"
+        ) != expected_centroid_variant:
+            raise RuntimeError(f"顶层 centroid 契约不匹配：{profile_path}")
         for aperture_index, f_number_value in enumerate(f_numbers.tolist()):
             f_number = float(f_number_value)
             bank = load_generated_psf_bank(
@@ -285,8 +303,11 @@ def validate_with_parent_loader(
                 device="cpu",
                 dtype=torch.float32,
             )
-            if bank.centroid_policy != "native" or bank.profile_id != profile_row["profile_id"]:
-                raise RuntimeError("parent loader 未保留 native/profile 契约")
+            if (
+                bank.centroid_policy != expected_centroid_policy
+                or bank.profile_id != profile_row["profile_id"]
+            ):
+                raise RuntimeError("parent loader 未保留 centroid/profile 契约")
             stats = compute_psf_stats(bank.psf_bank)
             actual = stats["mu_x"][..., 0] - stats["mu_x"][..., 1]
             expected = torch.as_tensor(payload["analytic_disparity_bins_px"])[
@@ -425,6 +446,14 @@ def export_raw_optical(config_path: Path) -> dict[str, Any]:
         "centroid_policy": "native",
         "centroid_variant": "raw_optical_v1",
         "pdoffset_embedded": False,
+        "profile_axis_contract": {
+            "raw_active_axes": list(_RAW_ACTIVE_AXES),
+            "inactive_export_retarget_axes": list(_EXPORT_RETARGET_AXES),
+            "inactive_profile_parameters_for_raw_export": list(
+                _EXPORT_RETARGET_AXES
+            ),
+            "centroid_slope_px_per_coc_active": False,
+        },
         "source_asset_root": str(source_root),
         "source_asset_manifest_sha256": config["source"]["artifact_manifest_sha256"],
         "source_psf_bank_sha256": config["source"]["psf_bank_sha256"],
@@ -495,6 +524,11 @@ Parent 使用时应设置 `psf_physical_centroid_mode: bank`、
         "status": "pass",
         "asset_id": config["run"]["asset_id"],
         "centroid_variant": "raw_optical_v1",
+        "raw_active_axes": list(_RAW_ACTIVE_AXES),
+        "inactive_export_retarget_axes": list(_EXPORT_RETARGET_AXES),
+        "inactive_profile_parameters_for_raw_export": list(
+            _EXPORT_RETARGET_AXES
+        ),
         "files": files,
     }
     _atomic_write_text(
