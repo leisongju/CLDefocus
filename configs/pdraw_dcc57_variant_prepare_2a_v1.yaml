@@ -1,0 +1,82 @@
+schema_version: 1
+
+run:
+  id: cldefocus_dcc57_variant_prepare_2a_v1
+  purpose: 基于两个已准入 raw-optical atom 准备 DCC5/DCC7 PairCommon 候选，不重新传播
+  mode: cpu_prepare_only
+
+sources:
+  - atom_id: MP00_JP2018-205527_Example01P_DCC6
+    raw_optical_root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_multi_prescription_device_atom_4l_dcc6_v1/MP00_JP2018-205527_Example01P_DCC6/raw_optical
+    raw_manifest_sha256: 1bd55f064419459d406abf9baf8eb88ba4ddd6892373b14146ce290d967977b6
+    raw_profile_sha256: 2df34482aaa2d58783686b3e0951b2b5beb1b83f24ca8edbb39a95e517dfbccb
+    dcc6_reference_root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_multi_prescription_device_atom_4l_dcc6_v1/MP00_JP2018-205527_Example01P_DCC6/paircommon_dcc6
+    dcc6_manifest_sha256: 96571e56972c45b4fff7663cc124cee746053cf9ccdbd17e194d9abff9777879
+    dcc6_profile_sha256: dd27973770b996a75f6f36997df6ec89577f92d6cb124cdea029b0faf033a62e
+  - atom_id: MP01_JP2013-003324_Example02P_DCC6
+    raw_optical_root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_multi_prescription_device_atom_4l_dcc6_v1/MP01_JP2013-003324_Example02P_DCC6/raw_optical
+    raw_manifest_sha256: 56e02b9bc4439c135961ae68fa42b326e63ec0e409ae6dfa722e35b43a12adb5
+    raw_profile_sha256: 195ee4a83ee1627b67a7aa7c663e102b59c53fe6256a4e35d1c405541a6a26a0
+    dcc6_reference_root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_multi_prescription_device_atom_4l_dcc6_v1/MP01_JP2013-003324_Example02P_DCC6/paircommon_dcc6
+    dcc6_manifest_sha256: 16c5ceccb52b94713551d92913dc6ddc4be479a4f7f351f2e73910cc1c413e1b
+    dcc6_profile_sha256: db789074b1d2f4da23f93f19d2f72924424a8fd5843f0f280a0134515adfcffc
+
+variants:
+  - {id: dcc5, slope_px_per_coc: 0.2}
+  - {id: dcc7, slope_px_per_coc: 0.14285714285714285}
+
+pair_common:
+  alignment: direct_mean
+  translation_mode: bilinear_center_fourier_place
+  common_shape_mtf_sigma_px: 1.0
+  clipped_negative_fraction_max: 0.02
+  transition_coc_px: 16.0
+  transition_power: 1.0
+
+audit:
+  texture_size_by_tile: {"64": 256, "128": 384}
+  seeds: [20260811]
+  lanczos_radius: 24
+  refinement_radius_px: 0.999
+  coordinate_iterations: 1
+  optimizer_xatol_px: 1.0e-5
+  min_texture_std: 0.008
+  min_score: 0.20
+  max_lr_error_px: 0.60
+  max_vertical_shift_px: 0.75
+  peak_exclusion_x: 2
+  peak_exclusion_y: 1
+  final_score_tolerance: 1.0e-6
+  worker_count: 4
+  gates:
+    slope_min: 0.95
+    slope_max: 1.05
+    r2_min: 0.99
+    sign_agreement_min: 1.0
+    sign_label_abs_min_px: 1.0e-5
+    valid_record_fraction_min: 1.0
+    centroid_abs_max_error_px: 0.002
+    retained_mass_min: 0.98
+
+parent:
+  repository: /mnt/data/lsj/model/pytorchlightning
+  loader_sha256: e2f0371513a6b0224ca84bd15eca7d8694444cb128c2d338ae62e744fe2a6e20
+  renderer_sha256: 327a65e83127177758f6e03fcfae3339b557c314e4e2919cf0d9346a1f5833c6
+
+gates:
+  centroid_abs_max_error_px: 0.002
+  parent_centroid_abs_max_error_px: 1.0e-6
+  retained_mass_min: 0.98
+  energy_abs_max: 1.0e-6
+  dcc6_reproduction_abs_max: 0.0
+
+output:
+  plan_root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_dcc57_variant_prepare_2a_v1_cpu_plan
+  formal_root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_dcc57_variants_2a_v1
+
+data_isolation:
+  real_pdraw_accessed: false
+  google_dev_accessed: false
+  google_holdout_accessed: false
+  dp5k_accessed: false
+  stereo_training_run: false

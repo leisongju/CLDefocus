@@ -1,0 +1,111 @@
+schema_version: 1
+
+run:
+  id: cldefocus_multi_prescription_device_atom_4l_dcc6_v1
+  purpose: 纯 CPU 冻结四个不同 prime-lens 处方及单一 DCC6 sensor head 的 GPU propagation 计划
+  mode: cpu_prepare_only
+
+source:
+  root: /mnt/data/lsj/data/optics/cldefocus/lens-mytable-original
+  include_globs: [prime/*.mytable]
+  expected_file_count: 946
+
+selection:
+  policy: reference_plus_deterministic_compatible_maximin_v1
+  reference_relative_path: prime/JP2018-205527_Example01P.mytable
+  selected_count: 4
+  native_f_number_max: 1.8
+  effective_focal_length_ratio_range: [0.60, 1.60]
+  image_radius_ratio_range: [0.70, 1.40]
+  compatibility_penalty: 0.35
+  expected_selected_relative_paths:
+    - prime/JP2018-205527_Example01P.mytable
+    - prime/US08503096-1.mytable
+    - prime/CN107272157_Example01P.mytable
+    - prime/US20200371325_Example02P.mytable
+  expected_selected_sha256:
+    prime/JP2018-205527_Example01P.mytable: 44ecff38064ae75429406eb466343ac2eeeec61a078bbde5dd67ad691dc7303a
+    prime/US08503096-1.mytable: f4b136a01db8c73278bdf1b210d57b541ea1c6c6be542e3068e629c699a2115c
+    prime/CN107272157_Example01P.mytable: 7ac7ba1df006bcf338a1e92467901dcd4239ec17653c8bb7735eb1b65d009292
+    prime/US20200371325_Example02P.mytable: b12bc09329f60f9d2fc7d212fa42afec66f1ff7f4ddf2430821f967bbcb72bf1
+
+optics:
+  wavelength_m: 5.875618e-7
+  f_numbers: [1.8, 2.0, 2.8, 4.0, 5.6]
+  signed_coc_bins_px: [-8.0, -4.0, -2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0, 4.0, 8.0]
+  field_x_normalized: [-0.65, 0.0, 0.65]
+  field_y_normalized: [-0.65, 0.0, 0.65]
+  sensor_width_px: 2560
+  sensor_height_px: 2560
+  pixel_pitch_m: 1.0e-5
+  reference_kernel_size: 57
+  export_kernel_size: 49
+
+# 首期所有 lens 共用同一个中性 sensor head，避免把 lens diversity 与 profile 扰动混淆。
+response_profile:
+  profile_id: HEAD0_NEUTRAL_DCC6
+  transition_width: 0.44
+  cross_talk: 0.025
+  split_bias_norm: 0.0
+  boundary_curvature_norm: 0.0
+  microlens_edge_rolloff: 0.06
+  field_split_slope: 0.0
+  field_acceptance_slope: 0.0
+  lr_throughput_delta: 0.0
+  field_lr_throughput_slope: 0.0
+  aperture_lr_throughput_slope: 0.0
+  low_order_aberration_waves:
+    astigmatism_0: 0.0
+    astigmatism_45: 0.0
+    coma_x: 0.0
+    coma_y: 0.0
+    spherical: 0.0
+    field_astigmatism_0_per_norm: 0.0
+    field_astigmatism_45_per_norm: 0.0
+    field_coma_x_per_norm: 0.0
+    field_coma_y_per_norm: 0.0
+
+device_atom:
+  sensor_head_id: HEAD0_NEUTRAL_DCC6
+  dcc_px_per_coc: 0.16666666666666666
+  coc_zero_anchor: preserve_native_optical_bias
+  pdoffset_embedded: false
+  pdoffset_contract: disp_gt=analytic_centroid_disp+independent_pd_offset_px
+
+pair_common:
+  alignment: direct_mean
+  center_translation_mode: bilinear_splat
+  place_translation_mode: fourier_nonnegative
+  common_shape_mtf_sigma_px: 1.0
+  transition_coc_px: 16.0
+  transition_power: 1.0
+  clipped_negative_fraction_max: 0.02
+  analytic_label_source: final_kernel_centroid_mu_left_x_minus_mu_right_x
+  ncc_role: diagnostic_admission_only_never_label_writeback
+
+gates:
+  numpy_jax_relative_error_max: 1.0e-9
+  expected_selected_lens_count: 4
+  expected_aperture_count: 5
+  expected_coc_count: 11
+  expected_field_grid_hw: [3, 3]
+  centroid_abs_max_error_px: 0.002
+  coc_zero_anchor_abs_max_error_px: 1.0e-4
+  energy_abs_max: 1.0e-6
+  retained_mass_min: 0.98
+  ncc_slope_min: 0.95
+  ncc_slope_max: 1.05
+  ncc_r2_min: 0.99
+  ncc_sign_agreement_min: 1.0
+  ncc_valid_record_fraction_min: 1.0
+
+output:
+  plan_root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_multi_prescription_device_atom_4l_dcc6_v1_cpu_plan
+  gpu_artifact_root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_multi_prescription_device_atom_4l_dcc6_v1
+
+data_isolation:
+  real_pdraw_accessed: false
+  google_dev_accessed: false
+  google_holdout_accessed: false
+  dp5k_accessed: false
+  stereo_training_run: false

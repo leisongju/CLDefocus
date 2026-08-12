@@ -1,0 +1,24 @@
+schema_version: 1
+
+run:
+  id: cldefocus_dcc57_variant_execute_2a_v1
+  purpose: 对冻结 DCC5/DCC7 CPU plan 执行 K64/K128 全场 NCC、候选导出和 parent smoke
+  mode: cpu_formal_audit_export
+  expected_candidate_count: 4
+  audit_order: [64, 128]
+  gpu_allowed: false
+  new_optical_propagation_allowed: false
+
+source_plan:
+  root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_dcc57_variant_prepare_2a_v1_cpu_plan
+  artifact_manifest_sha256: 41978eaabe29f65076b18aacac1e3cfe4b5b22740f8d8025f4ba6c9a65be9ece
+
+output:
+  root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_dcc57_variants_2a_v1
+
+data_isolation:
+  real_pdraw_accessed: false
+  google_dev_accessed: false
+  google_holdout_accessed: false
+  dp5k_accessed: false
+  stereo_training_run: false

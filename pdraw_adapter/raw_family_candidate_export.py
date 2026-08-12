@@ -371,7 +371,10 @@ def export(config_path: Path) -> dict[str, Any]:
             "candidate": candidate,
             "profile_count": len(profile_rows),
             "aperture_count": 5,
-            "profile_aperture_parent_validation": "80/80",
+            "profile_aperture_parent_validation": (
+                f"{parent_validation['combination_count']}/"
+                f"{parent_validation['expected_combination_count']}"
+            ),
             "profiles": profile_rows,
             "audit_lineage": audit_rows,
             "k64_k128_convergence": convergence,

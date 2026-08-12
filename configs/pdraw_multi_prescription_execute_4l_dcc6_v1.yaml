@@ -1,0 +1,122 @@
+schema_version: 1
+
+run:
+  id: cldefocus_multi_prescription_execute_4l_dcc6_v1
+  purpose: 四个不同 prime-lens 处方的五光圈共享-lineage propagation、PairCommon DCC6、K64/K128 NCC 与 parent smoke
+  mode: gpu_propagate_audit_export
+
+source_plan:
+  root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_multi_prescription_device_atom_4l_dcc6_v1_cpu_plan
+  artifact_manifest_sha256: 3adff4d37e0960556163dda07d227024fd22dd3d42ca8e6072fdd43d96795b3f
+  device_atom_plan_sha256: d34468c473f26085c3f98521158fda2909e8da0573ac8fb3d254ecfe52e48eca
+
+cldefocus:
+  repository: https://github.com/lykelee/CLDefocus.git
+  checkout: /mnt/data/lsj/model/pytorchlightning/render/CLDefocus
+  commit: b1e4562f4de920b82b265bcc3fe71424c9055cdc
+  license: MIT
+  implementation_sha256:
+    pdraw_adapter/family_bank.py: 2719c4a0ebc54c394c9c479d55604e4a07ba44e95a8853c45c6ae920f60e6396
+    pdraw_adapter/raw_optical_export.py: 4de1808814082957936dba0f31d3cc7a0fe42e61d750c91d7c1cf504ddd5305c
+    pdraw_adapter/raw_family_continuous_audit.py: 2433a6a8f4d3836376a66ffd8ad193f99030cf9551bb45eabf869479a8ab5fba
+    pdraw_adapter/raw_family_candidate_export.py: 2a0100af57e846a49e5297bc32ca84a94680ba44aafa5bbb311c8dc742e4bf18
+    pdraw_adapter/multi_profile.py: 998179c82f182b7ab6fce68eaf163c203f164ab47cca8f79c6761da7ffe82ccf
+    pdraw_adapter/multi_aperture.py: 21c829d7412f0863049527306c3e995a26cdbb1ef984b1d7113e33525d200b44
+
+lens:
+  root: /mnt/data/lsj/data/optics/cldefocus/lens-mytable-original
+  replacements_by_atom:
+    MP01_US08503096-1_DCC6:
+      replacement_rank: 1
+      selection_policy: exclude_failed_then_reference_first_deterministic_compatible_maximin_v1
+      lens_id: JP2013-003324_Example02P
+      lens_relative_path: prime/JP2013-003324_Example02P.mytable
+      lens_sha256: 49130b317e3b719bd78e566ca1b1ee53bb3d51995a08ab7f5c65738acb7bbcc1
+      replacement_atom_id: MP01_JP2013-003324_Example02P_DCC6
+      negative_evidence_root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_multi_prescription_device_atom_4l_dcc6_v1/MP01_US08503096-1_DCC6
+
+parent:
+  repository: /mnt/data/lsj/model/pytorchlightning
+  loader_sha256: e2f0371513a6b0224ca84bd15eca7d8694444cb128c2d338ae62e744fe2a6e20
+  renderer_sha256: 327a65e83127177758f6e03fcfae3339b557c314e4e2919cf0d9346a1f5833c6
+
+propagation:
+  wavelength_m: 5.875618e-7
+  object_depth_m: 1000.0
+  sensor_width_px: 2560
+  sensor_height_px: 2560
+  pixel_pitch_m: 1.0e-5
+  sensor_offset_envelope_m: 0.0015
+  # US08503096-1 记录的 image plane 离零 CoC 约 2.58 mm；4 mm 只扩大
+  # 求根 bracket，不改变最终冻结的目标 CoC bins。CPU 全场检查确认 45/45
+  # aperture-field 均包围 [-8,+8] CoC。
+  sensor_offset_envelope_m_by_atom:
+    MP01_US08503096-1_DCC6: 0.004
+  target_coc_tolerance_px: 1.0e-6
+  reference_kernel_size: 57
+  export_kernel_size: 49
+  upsample: 1
+  batch_sensor_chunk_size: 32
+  master_seed: 20260812
+  profile_id_prefix: H
+  pdoffset_sample_range_px: [-0.25, 0.25]
+  pdoffset_smoke_probe_px: 0.125
+
+raw_family_gates:
+  energy_abs_max: 2.0e-6
+  raw_support_border_width_px: 2
+  raw_support_inner_mass_min: 0.98
+  reference_crop_retained_mass_min: 0.995
+  retarget_retained_mass_min: 0.995
+  combined_support_retained_mass_min: 0.99
+  centroid_target_error_abs_max_px: 5.0e-5
+  zero_centroid_abs_max_px: 5.0e-5
+  pdoffset_probe_error_abs_max_px: 5.0e-5
+  adjacent_psf_l1_max: 1.999
+  signed_monotonic_step_min_px: 0.01
+
+audit:
+  coc_abs_max_px: 1.0
+  texture_size_by_tile:
+    "64": 256
+    "128": 384
+  seeds: [20260811]
+  tiles_per_axis: 1
+  search_x: 4
+  search_y: 2
+  lanczos_radius: 24
+  refinement_radius_px: 0.999
+  coordinate_iterations: 1
+  optimizer_xatol_px: 1.0e-5
+  min_texture_std: 0.008
+  min_score: 0.20
+  max_lr_error_px: 0.60
+  max_vertical_shift_px: 0.75
+  peak_exclusion_x: 2
+  peak_exclusion_y: 1
+  final_score_tolerance: 1.0e-6
+  worker_count: 4
+  gates:
+    slope_min: 0.95
+    slope_max: 1.05
+    r2_min: 0.99
+    sign_agreement_min: 1.0
+    sign_label_abs_min_px: 1.0e-5
+    valid_record_fraction_min: 1.0
+    centroid_abs_max_error_px: 0.002
+    retained_mass_min: 0.98
+
+candidate_gates:
+  centroid_abs_max_error_px: 0.002
+  parent_centroid_abs_max_error_px: 1.0e-6
+  retained_mass_min: 0.98
+
+output:
+  root: /mnt/data/lsj/artifacts/pdraw-stereo-v2/render/cldefocus/cldefocus_multi_prescription_device_atom_4l_dcc6_v1
+
+data_isolation:
+  real_pdraw_accessed: false
+  google_dev_accessed: false
+  google_holdout_accessed: false
+  dp5k_accessed: false
+  stereo_training_run: false
